@@ -20,6 +20,12 @@ func HandleHelloWorld() http.HandlerFunc {
 	}
 }
 
+func ValidateUser(r *http.Request) bool {
+	// Extract token from Bearer Authorization header & verify user in database
+	// Depending upon successfull authentication return true else false
+	return true
+}
+
 // NewProxy takes target host and creates a reverse proxy
 func NewProxy(targetHost string) (*httputil.ReverseProxy, error) {
 	url, err := url.Parse(targetHost)
@@ -30,11 +36,12 @@ func NewProxy(targetHost string) (*httputil.ReverseProxy, error) {
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
+		// *************** IMPORTANT ***************
 		// read username from request body &
 		// authenticate the user by verifying in database or any other way
 		// pass the role of the user
 		// "admin" role will have all privileges
-		// rest roles will have access as per authorization policy
+		// rest roles will have access as per authorization policy configured in grafana
 		user := "admin"
 		req.Header.Set("X-WEBAUTH-USER", user)
 	}
@@ -44,6 +51,9 @@ func NewProxy(targetHost string) (*httputil.ReverseProxy, error) {
 // ProxyRequestHandler handles the http request using proxy
 func ProxyRequestHandler(proxy *httputil.ReverseProxy) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !ValidateUser(r) {
+			sendResponse(r.Context(), w, http.StatusUnauthorized, map[string]interface{}{"error": "user unauthroized"})
+		}
 		proxy.ServeHTTP(w, r)
 	}
 }
@@ -79,7 +89,6 @@ func main() {
 	publicRoutes := router.Methods(http.MethodPost, http.MethodGet, http.MethodPut, http.MethodDelete).Subrouter()
 	publicRoutes.PathPrefix("/grafana/").HandlerFunc(ProxyRequestHandler(proxy))
 	publicRoutes.Methods(http.MethodGet).Path("/hello").HandlerFunc(HandleHelloWorld())
-	fmt.Println("HEllo world")
 	corsObj := createCorsObject()
 	Handler := corsObj.Handler(router)
 
